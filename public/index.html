@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تطبيقي على Cloudflare</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>مرحباً بك في تطبيقي! 🚀</h1>
+            <p>هذا التطبيق يعمل على Cloudflare Pages</p>
+        </header>
+
+        <main>
+            <div class="card">
+                <h2>آلة حاسبة بسيطة</h2>
+                <div class="calculator">
+                    <input type="number" id="num1" placeholder="الرقم الأول">
+                    <input type="number" id="num2" placeholder="الرقم الثاني">
+                    <div class="buttons">
+                        <button onclick="calculate('add')">+ جمع</button>
+                        <button onclick="calculate('subtract')">- طرح</button>
+                        <button onclick="calculate('multiply')">× ضرب</button>
+                        <button onclick="calculate('divide')">÷ قسمة</button>
+                    </div>
+                    <div id="result" class="result"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>قائمة المهام</h2>
+                <div class="todo">
+                    <input type="text" id="todoInput" placeholder="أضف مهمة جديدة...">
+                    <button onclick="addTodo()">إضافة</button>
+                    <ul id="todoList"></ul>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>الطقس</h2>
+                <button onclick="getWeather()">الحصول على الطقس</button>
+                <div id="weather" class="weather"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>تم الإنشاء باستخدام JavaScript و Cloudflare Pages</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
