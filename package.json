@@ -1,0 +1,14 @@
+{
+  "name": "telegram-image-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for image editing on Cloudflare Pages",
+  "main": "functions/api/bot.js",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
