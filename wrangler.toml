@@ -1,0 +1,6 @@
+name = "my-cloudflare-app"
+compatibility_date = "2024-03-20"
+
+[pages]
+build_command = ""
+upload_dir = "public"
