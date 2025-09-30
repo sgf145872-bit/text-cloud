@@ -171,3 +171,23 @@ footer {
         padding: 10px;
     }
 }
+/* تنسيقات إضافية للروابط */
+a {
+    color: #667eea;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    color: #5a67d8;
+    text-decoration: underline;
+}
+
+/* تنسيق خاص لرابط سياسة الخصوصية في الفوتر */
+footer a {
+    color: #cbd5e0;
+}
+
+footer a:hover {
+    color: white;
+}
