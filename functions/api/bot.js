@@ -1,74 +1,43 @@
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-
-const botToken = "8028491354:AAG_56-Us87dQFRWmZW0ID3fLVJJ9LYtas4";
-const bot = new TelegramBot(botToken, { polling: true });
-
-// دالة للاتصال بالـ API الخارجي
-async function callEditAPI(text, imageUrl) {
-    const apiUrl = "https://viscodev.x10.mx/LOGO/nano.php";
-    
-    const postData = {
-        text: text,
-        links: imageUrl
-    };
+export async function onRequestPost(context) {
+    const { request } = context;
     
     try {
-        const response = await axios.post(apiUrl, postData, {
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            timeout: 120000
+        const update = await request.json();
+        
+        // معالجة الرسائل
+        if (update.message) {
+            const message = update.message;
+            const chatId = message.chat.id;
+            const text = message.text ? message.text.trim() : '';
+            const caption = message.caption ? message.caption.trim() : '';
+            
+            if (text === '/start') {
+                return await sendWelcome(chatId);
+            }
+            else if (message.photo && caption) {
+                return await processImage(chatId, message, caption);
+            }
+            else if (message.photo && !caption) {
+                return await sendTextResponse(chatId, 
+                    "❌ <b>يجب إضافة وصف للصورة</b>\n\nأعد إرسال الصورة مع إضافة التسمية التوضيحية");
+            }
+        }
+        
+        return new Response(JSON.stringify({ status: 'OK' }), {
+            headers: { 'Content-Type': 'application/json' }
         });
         
-        return response.data;
     } catch (error) {
-        console.error('API Error:', error.message);
-        return false;
-    }
-}
-
-// دالة للحصول على رابط ملف التليجرام
-async function getTelegramFileUrl(fileId) {
-    try {
-        const file = await bot.getFile(fileId);
-        return `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
-    } catch (error) {
-        console.error('File URL Error:', error.message);
-        return null;
-    }
-}
-
-// دالة إرسال الصورة المعدلة
-async function sendImage(chatId, imageData, text) {
-    try {
-        // حفظ الصورة مؤقتاً
-        const tempDir = require('os').tmpdir();
-        const tempFile = path.join(tempDir, `image_${Date.now()}.png`);
-        
-        // تحويل base64 إلى buffer وحفظه
-        const imageBuffer = Buffer.from(imageData, 'base64');
-        fs.writeFileSync(tempFile, imageBuffer);
-        
-        // إرسال الصورة
-        await bot.sendPhoto(chatId, tempFile, {
-            caption: `✅ <b>تم تحرير الصورة بنجاح!</b>\n📝 <b>الوصف:</b> ${escapeHtml(text)}`,
-            parse_mode: 'HTML'
+        console.error('Error:', error);
+        return new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json' }
         });
-        
-        // حذف الملف المؤقت
-        fs.unlinkSync(tempFile);
-        
-    } catch (error) {
-        console.error('Send Image Error:', error.message);
-        throw error;
     }
 }
 
 // دالة إرسال رسالة الترحيب
-function sendWelcome(chatId) {
+async function sendWelcome(chatId) {
     const welcomeText = `🎨 <b>مرحباً بك في بوت تحرير الصور المتقدم!</b>\n\n
 ✨ <b>مميزات البوت:</b>\n
 • <code>☁ 𝝢𝝖𝝢𝝤 𝝗𝝖𝝢𝝖𝝢𝝖 </code> - تقنية التعديل المتقدم\n
@@ -90,34 +59,175 @@ function sendWelcome(chatId) {
         ]
     };
     
-    bot.sendPhoto(chatId, 'https://t.me/bgrtiio/27', {
-        caption: welcomeText,
-        parse_mode: 'HTML',
-        reply_markup: keyboard
+    return await sendPhoto(chatId, 'https://t.me/bgrtiio/27', welcomeText, keyboard);
+}
+
+// دالة معالجة الصورة
+async function processImage(chatId, message, caption) {
+    try {
+        const photo = message.photo[message.photo.length - 1];
+        const fileUrl = await getTelegramFileUrl(photo.file_id);
+        
+        if (!fileUrl) {
+            return await sendTextResponse(chatId, "❌ <b>خطأ في تحميل الصورة</b>");
+        }
+        
+        // إرسال رسالة التقدم
+        const progressMessage = await sendTextResponse(chatId, "⏳ <b>جاري تحرير الصورة...</b>\n⚡ <b>باستخدام تقنية الذكاء الاصطناعي</b>");
+        const progressMessageId = progressMessage.result.message_id;
+        
+        // استدعاء API التعديل
+        const result = await callEditAPI(caption, fileUrl);
+        
+        if (result && result.success && result.image_data) {
+            // حذف رسالة التقدم
+            await deleteMessage(chatId, progressMessageId);
+            
+            // إرسال الصورة المعدلة
+            return await sendImageFromBase64(chatId, result.image_data, caption);
+        } else {
+            // حذف رسالة التقدم وإرسال رسالة خطأ
+            await deleteMessage(chatId, progressMessageId);
+            return await sendTextResponse(chatId, 
+                "❌ <b>عذراً، لم أتمكن من تحرير الصورة</b>\n\nجرب وصفاً بالإنجليزية أو وصفاً أكثر وضوحاً");
+        }
+        
+    } catch (error) {
+        console.error('Image Processing Error:', error);
+        return await sendTextResponse(chatId, "❌ <b>حدث خطأ أثناء معالجة الصورة</b>");
+    }
+}
+
+// دالة للاتصال بالـ API الخارجي
+async function callEditAPI(text, imageUrl) {
+    const apiUrl = "https://viscodev.x10.mx/LOGO/nano.php";
+    
+    const postData = {
+        text: text,
+        links: imageUrl
+    };
+    
+    try {
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(postData)
+        });
+        
+        if (response.ok) {
+            return await response.json();
+        }
+        return false;
+    } catch (error) {
+        console.error('API Error:', error);
+        return false;
+    }
+}
+
+// دوال Telegram API
+async function bot(method, datas = {}) {
+    const botToken = "8028491354:AAG_56-Us87dQFRWmZW0ID3fLVJJ9LYtas4";
+    const url = `https://api.telegram.org/bot${botToken}/${method}`;
+    
+    try {
+        const formData = new FormData();
+        for (const key in datas) {
+            if (datas[key] instanceof File || datas[key] instanceof Blob) {
+                formData.append(key, datas[key]);
+            } else if (typeof datas[key] === 'object') {
+                formData.append(key, JSON.stringify(datas[key]));
+            } else {
+                formData.append(key, datas[key]);
+            }
+        }
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            body: formData
+        });
+        
+        return await response.json();
+    } catch (error) {
+        console.error('Telegram API Error:', error);
+        return { ok: false };
+    }
+}
+
+async function sendMessage(chatId, text, replyMarkup = null) {
+    const params = {
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+    };
+    
+    if (replyMarkup) {
+        params.reply_markup = JSON.stringify(replyMarkup);
+    }
+    
+    return await bot('sendMessage', params);
+}
+
+async function sendTextResponse(chatId, text) {
+    return await sendMessage(chatId, text);
+}
+
+async function sendPhoto(chatId, photoUrl, caption, replyMarkup = null) {
+    const params = {
+        chat_id: chatId,
+        photo: photoUrl,
+        caption: caption,
+        parse_mode: 'HTML'
+    };
+    
+    if (replyMarkup) {
+        params.reply_markup = JSON.stringify(replyMarkup);
+    }
+    
+    return await bot('sendPhoto', params);
+}
+
+async function sendImageFromBase64(chatId, imageData, text) {
+    try {
+        // تحويل base64 إلى blob
+        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        const blob = new Blob([bytes], { type: 'image/png' });
+        const file = new File([blob], 'edited_image.png', { type: 'image/png' });
+        
+        return await bot('sendPhoto', {
+            chat_id: chatId,
+            photo: file,
+            caption: `✅ <b>تم تحرير الصورة بنجاح!</b>\n📝 <b>الوصف:</b> ${escapeHtml(text)}`
+        });
+        
+    } catch (error) {
+        console.error('Send Image Error:', error);
+        return await sendMessage(chatId, 
+            "✅ <b>تم تحرير الصورة بنجاح!</b>\n📝 <b>الوصف:</b> " + escapeHtml(text));
+    }
+}
+
+async function deleteMessage(chatId, messageId) {
+    return await bot('deleteMessage', {
+        chat_id: chatId,
+        message_id: messageId
     });
 }
 
-// دالة عرض التقدم
-async function showProgress(chatId, progressMessageId = null) {
-    const progressMessages = [
-        "⏳ <b>جاري تحرير الصورة...</b>",
-        "⏳ <b>جاري تحرير الصورة..</b>",
-        "⏳ <b>جاري تحرير الصورة.</b>",
-        "⏳ <b>جاري تحرير الصورة..</b>"
-    ];
-    
-    const message = progressMessages[Math.floor(Math.random() * progressMessages.length)];
-    
-    if (progressMessageId) {
-        await bot.editMessageText(message, {
-            chat_id: chatId,
-            message_id: progressMessageId,
-            parse_mode: 'HTML'
-        });
-    } else {
-        const sentMessage = await bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
-        return sentMessage.message_id;
+async function getTelegramFileUrl(fileId) {
+    const result = await bot('getFile', { file_id: fileId });
+    if (result && result.result && result.result.file_path) {
+        return `https://api.telegram.org/file/bot${BOT_TOKEN}/${result.result.file_path}`;
     }
+    return null;
 }
 
 // دالة مساعدة للهروب من HTML
@@ -131,69 +241,3 @@ function escapeHtml(text) {
     };
     return text.replace(/[&<>"']/g, m => map[m]);
 }
-
-// معالجة الرسائل
-bot.on('message', async (msg) => {
-    const chatId = msg.chat.id;
-    const text = msg.text ? msg.text.trim() : '';
-    const caption = msg.caption ? msg.caption.trim() : '';
-    
-    if (text === '/start') {
-        sendWelcome(chatId);
-    } else if (msg.photo && caption) {
-        try {
-            // الحصول على أعلى دقة للصورة
-            const photo = msg.photo[msg.photo.length - 1];
-            const fileUrl = await getTelegramFileUrl(photo.file_id);
-            
-            if (fileUrl) {
-                // إرسال رسالة التقدم
-                const progressMessageId = await showProgress(chatId);
-                
-                // تحديث رسالة التقدم
-                await showProgress(chatId, progressMessageId);
-                
-                // استدعاء API التعديل
-                const result = await callEditAPI(caption, fileUrl);
-                
-                if (result && result.success && result.image_data) {
-                    // حذف رسالة التقدم
-                    await bot.deleteMessage(chatId, progressMessageId);
-                    
-                    // إرسال الصورة المعدلة
-                    await sendImage(chatId, result.image_data, caption);
-                } else {
-                    // حذف رسالة التقدم وإرسال رسالة خطأ
-                    await bot.deleteMessage(chatId, progressMessageId);
-                    await bot.sendMessage(
-                        chatId, 
-                        "❌ <b>عذراً، لم أتمكن من تحرير الصورة</b>\n\nجرب وصفاً بالإنجليزية أو وصفاً أكثر وضوحاً", 
-                        { parse_mode: 'HTML' }
-                    );
-                }
-            } else {
-                await bot.sendMessage(chatId, "❌ <b>خطأ في تحميل الصورة</b>", { parse_mode: 'HTML' });
-            }
-        } catch (error) {
-            console.error('Processing Error:', error.message);
-            await bot.sendMessage(chatId, "❌ <b>حدث خطأ أثناء معالجة الصورة</b>", { parse_mode: 'HTML' });
-        }
-    } else if (msg.photo && !caption) {
-        await bot.sendMessage(
-            chatId, 
-            "❌ <b>يجب إضافة وصف للصورة</b>\n\nأعد إرسال الصورة مع إضافة التسمية التوضيحية", 
-            { parse_mode: 'HTML' }
-        );
-    }
-});
-
-// معالجة الأخطاء
-bot.on('polling_error', (error) => {
-    console.error('Polling Error:', error);
-});
-
-bot.on('webhook_error', (error) => {
-    console.error('Webhook Error:', error);
-});
-
-console.log('Bot is running...');
